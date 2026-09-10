@@ -1,0 +1,52 @@
+{
+  "mappings": {
+    "com/gothbreach/client/mixin/ClientPlayerEntityMixin": {
+      "isUsingItem": "Lnet/minecraft/class_746;method_6115()Z"
+    },
+    "com/gothbreach/client/mixin/ClientPlayerInteractionManagerMixin": {
+      "getReachDistance": "Lnet/minecraft/class_636;method_2904()F",
+      "hasExtendedReach": "Lnet/minecraft/class_636;method_2926()Z"
+    },
+    "com/gothbreach/client/mixin/EntityMixin": {
+      "getVelocityMultiplier": "Lnet/minecraft/class_1297;method_23326()F"
+    },
+    "com/gothbreach/client/mixin/InGameHudMixin": {
+      "render": "Lnet/minecraft/class_329;method_1753(Lnet/minecraft/class_332;F)V"
+    },
+    "com/gothbreach/client/mixin/KeyboardMixin": {
+      "onKey": "Lnet/minecraft/class_309;method_1466(JIIII)V"
+    },
+    "com/gothbreach/client/mixin/LivingEntityMixin": {
+      "isUsingItem": "Lnet/minecraft/class_1309;method_6115()Z"
+    },
+    "com/gothbreach/client/mixin/MinecraftClientMixin": {
+      "tick": "Lnet/minecraft/class_310;method_1574()V"
+    }
+  },
+  "data": {
+    "named:intermediary": {
+      "com/gothbreach/client/mixin/ClientPlayerEntityMixin": {
+        "isUsingItem": "Lnet/minecraft/class_746;method_6115()Z"
+      },
+      "com/gothbreach/client/mixin/ClientPlayerInteractionManagerMixin": {
+        "getReachDistance": "Lnet/minecraft/class_636;method_2904()F",
+        "hasExtendedReach": "Lnet/minecraft/class_636;method_2926()Z"
+      },
+      "com/gothbreach/client/mixin/EntityMixin": {
+        "getVelocityMultiplier": "Lnet/minecraft/class_1297;method_23326()F"
+      },
+      "com/gothbreach/client/mixin/InGameHudMixin": {
+        "render": "Lnet/minecraft/class_329;method_1753(Lnet/minecraft/class_332;F)V"
+      },
+      "com/gothbreach/client/mixin/KeyboardMixin": {
+        "onKey": "Lnet/minecraft/class_309;method_1466(JIIII)V"
+      },
+      "com/gothbreach/client/mixin/LivingEntityMixin": {
+        "isUsingItem": "Lnet/minecraft/class_1309;method_6115()Z"
+      },
+      "com/gothbreach/client/mixin/MinecraftClientMixin": {
+        "tick": "Lnet/minecraft/class_310;method_1574()V"
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.gothbreach.client.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "client": [
+    "MinecraftClientMixin",
+    "ClientPlayerInteractionManagerMixin",
+    "ClientConnectionMixin",
+    "RenderLayersMixin",
+    "LivingEntityMixin",
+    "InGameHudMixin",
+    "KeyboardMixin"
+    "ClientPlayerEntityMixin",
+    "EntityMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
+

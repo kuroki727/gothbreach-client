@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "cheat-client",
+  "version": "${version}",
+  "name": "Gothbreach Client",
+  "description": "Самый мощный чит-клиент для 2b2t",
+  "authors": ["Gothbreach"],
+  "contact": {},
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "client": ["com.gothbreach.client.CheatClient"]
+  },
+  "mixins": ["cheat-client.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "fabric": "*",
+    "minecraft": "~1.20.4"
+    //"baritone": "*"
+  }
+}
