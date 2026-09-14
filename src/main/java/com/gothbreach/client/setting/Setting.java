@@ -11,4 +11,5 @@ public @interface Setting {
     double max() default Double.MAX_VALUE;
     int decimalPlaces() default 2;
     String[] values() default {};
+    boolean visible() default true;
 }
