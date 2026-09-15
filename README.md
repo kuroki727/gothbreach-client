@@ -29,6 +29,7 @@ A Fabric-based Minecraft cheat client, built for **1.20.4**. Originally aimed at
 - **Sprint** — forces sprinting
 - **Strafe** — air strafing
 - **ElytraFly** — motion control while gliding
+- **Scafold** — auto block placement
 
 More modules (ESP, X-Ray, Scaffold, Baritone pathing, etc.) exist as stubs in `ModuleManager` and will be enabled as they're finished.
 
