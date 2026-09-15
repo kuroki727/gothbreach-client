@@ -1,14 +1,17 @@
 package com.gothbreach.client.module;
 
-public enum Category {
-    COMBAT("Combat"),
-    MOVEMENT("Movement"),
-    PLAYER("Player"),
-    RENDER("Render"),
-    WORLD("World"),
-    MISC("Misc");
+import com.gothbreach.client.util.LanguageManager;
 
-    private final String name;
-    Category(String name) { this.name = name; }
-    public String getName() { return name; }
+public enum Category {
+    COMBAT("category.combat"),
+    MOVEMENT("category.movement"),
+    PLAYER("category.player"),
+    RENDER("category.render"),
+    WORLD("category.world"),
+    MISC("category.misc"),
+    CLIENT("category.client");
+
+    private final String translationKey;
+    Category(String translationKey) { this.translationKey = translationKey; }
+    public String getName() { return LanguageManager.get(translationKey); }
 }

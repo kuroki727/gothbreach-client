@@ -2,6 +2,7 @@ package com.gothbreach.client.module;
 
 import com.gothbreach.client.module.modules.combat.*;
 import com.gothbreach.client.module.modules.movement.*;
+import com.gothbreach.client.module.modules.client.ClickGUIModule;
 
 import java.util.*;
 
@@ -36,6 +37,8 @@ public class ModuleManager {
         add(new ElytraFly());
         add(new Scaffold());
 
+        // Client
+        add(new ClickGUIModule());
         // Загружаем сохранённые настройки
         loadConfigs();
     }
