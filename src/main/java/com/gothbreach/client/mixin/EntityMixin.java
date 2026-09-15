@@ -16,13 +16,28 @@ public class EntityMixin {
     private void onGetVelocityMultiplier(CallbackInfoReturnable<Float> cir) {
         NoSlow noSlow = (NoSlow) CheatClient.moduleManager.get("NoSlow");
         if (noSlow == null || !noSlow.isEnabled()) return;
+
         Entity self = (Entity)(Object)this;
-        if (self == CheatClient.mc.player) {
-            var block = CheatClient.mc.world.getBlockState(self.getBlockPos()).getBlock();
-            if (block == Blocks.SOUL_SAND && noSlow.soulSand()) { cir.setReturnValue(1.0f); return; }
-            if (block == Blocks.HONEY_BLOCK && noSlow.honeyBlock()) { cir.setReturnValue(1.0f); return; }
-            if (block == Blocks.SLIME_BLOCK && noSlow.slimeBlock()) { cir.setReturnValue(1.0f); return; }
-            if (block == Blocks.COBWEB && noSlow.web()) { cir.setReturnValue(1.0f); return; }
+        if (self != CheatClient.mc.player) return;
+
+        var block = CheatClient.mc.world.getBlockState(self.getBlockPos()).getBlock();
+
+        if (block == Blocks.COBWEB && noSlow.web()) { cir.setReturnValue(1.0f); return; }
+        if (block == Blocks.SOUL_SAND && noSlow.soulSand()) { cir.setReturnValue(1.0f); return; }
+        if (block == Blocks.SLIME_BLOCK && noSlow.slimeBlock()) { cir.setReturnValue(1.0f); return; }
+        if (block == Blocks.HONEY_BLOCK && noSlow.honeyBlock()) { cir.setReturnValue(1.0f); return; }
+        if (block == Blocks.SWEET_BERRY_BUSH && noSlow.berryBush()) { cir.setReturnValue(1.0f); return; }
+    }
+
+    // Отменяет замедление в жидкостях
+    @Inject(method = "isTouchingWater", at = @At("HEAD"), cancellable = true)
+    private void onIsTouchingWater(CallbackInfoReturnable<Boolean> cir) {
+        NoSlow noSlow = (NoSlow) CheatClient.moduleManager.get("NoSlow");
+        if (noSlow != null && noSlow.fluidDrag()) {
+            Entity self = (Entity)(Object)this;
+            if (self == CheatClient.mc.player) {
+                cir.setReturnValue(false);
+            }
         }
     }
 }
