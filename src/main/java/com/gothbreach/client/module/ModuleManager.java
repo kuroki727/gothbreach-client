@@ -41,7 +41,7 @@ public class ModuleManager {
         //add(new AntiVoid());
         //add(new Blink());
         //add(new Freecam());
-        //add(new Scaffold());
+        add(new Scaffold());
         //add(new FastPlace());
         //add(new ESP());
         //add(new XRay());
