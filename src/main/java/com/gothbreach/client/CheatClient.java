@@ -19,27 +19,16 @@ public class CheatClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        System.out.println("[Gothbreach] Инициализация клиента...");
         mc = MinecraftClient.getInstance();
         eventManager = new EventManager();
         moduleManager = new ModuleManager();
         clickGUI = new ClickGUI();
-        moduleManager.init();
-        moduleManager.loadConfigs();
+        moduleManager.init(); // внутри уже вызывается loadConfigs()
 
         openGuiKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key.cheat-client.opengui",
             GLFW.GLFW_KEY_RIGHT_SHIFT,
             "Gothbreach Client"
         ));
-
-        // Отложенное открытие GUI (безопасно)
-        mc.execute(() -> {
-            if (mc.currentScreen == null) {
-                mc.setScreen(clickGUI);
-                System.out.println("[Gothbreach] GUI открыт.");
-            }
-        });
-        System.out.println("[Gothbreach] Инициализация завершена.");
     }
 }

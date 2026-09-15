@@ -7,6 +7,7 @@ import com.gothbreach.client.setting.Setting;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
+import org.lwjgl.glfw.GLFW;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -18,6 +19,7 @@ public class ClickGUI extends Screen {
     private Module selectedModule = null;
     private int scrollOffset = 0;
     private int settingsScroll = 0;
+    private Module bindingModule = null; // модуль, для которого ждём нажатия клавиши
 
     private final int rowHeight = 18;
     private final int headerHeight = 22;
@@ -33,7 +35,6 @@ public class ClickGUI extends Screen {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, width, height, 0x80000000);
 
-        // Заголовок
         context.fill(10, 10, 10 + categoryPanelWidth + modulePanelWidth + settingsPanelWidth, 32, 0xFF202020);
         context.drawTextWithShadow(textRenderer, "Gothbreach Client", 16, 17, 0xFFFFFF);
 
@@ -42,7 +43,7 @@ public class ClickGUI extends Screen {
         int settingsY = 38;
         int settingsX = 10 + categoryPanelWidth + modulePanelWidth;
 
-        // === Категории ===
+        // Категории
         for (Category cat : Category.values()) {
             boolean selected = cat == selectedCategory;
             context.fill(10, catY, 10 + categoryPanelWidth, catY + rowHeight, selected ? 0xFF00AA00 : 0xFF303030);
@@ -50,7 +51,7 @@ public class ClickGUI extends Screen {
             catY += rowHeight;
         }
 
-        // === Модули ===
+        // Модули
         List<Module> modules = new ArrayList<>(CheatClient.moduleManager.getModulesInCategory(selectedCategory));
         int maxVisible = (height - 50) / rowHeight;
         int start = Math.min(scrollOffset, Math.max(0, modules.size() - maxVisible));
@@ -68,24 +69,41 @@ public class ClickGUI extends Screen {
             context.fill(10 + categoryPanelWidth, moduleY, 10 + categoryPanelWidth + modulePanelWidth, moduleY + rowHeight, bg);
             context.drawTextWithShadow(textRenderer, mod.getName(), 16 + categoryPanelWidth, moduleY + 5,
                     enabled ? 0x00FF00 : 0xFFFFFF);
+
+            // Показываем бинд справа
+            String bindText = mod.getKey() == -1 ? "" : GLFW.glfwGetKeyName(mod.getKey(), 0);
+            if (bindText != null && !bindText.isEmpty()) {
+                context.drawTextWithShadow(textRenderer, "[" + bindText.toUpperCase() + "]",
+                        10 + categoryPanelWidth + modulePanelWidth - 40, moduleY + 5, 0xFFFF00);
+            }
             moduleY += rowHeight;
         }
 
-        // === Настройки выбранного модуля ===
+        // Настройки
         if (selectedModule != null) {
             context.fill(settingsX, settingsY, settingsX + settingsPanelWidth, height - 10, 0xFF181818);
             context.drawTextWithShadow(textRenderer, selectedModule.getName(), settingsX + 6, settingsY + 5, 0xFFFF00);
             settingsY += headerHeight + 4;
 
+            // Кнопка бинда
+            int bindBg = (bindingModule == selectedModule) ? 0xFFAA5500 : 0xFF282828;
+            context.fill(settingsX + 4, settingsY, settingsX + settingsPanelWidth - 4, settingsY + rowHeight, bindBg);
+            context.drawTextWithShadow(textRenderer, "Бинд", settingsX + 8, settingsY + 5, 0xFFFFFF);
+            String keyName = selectedModule.getKey() == -1 ? "Нет" :
+                    (GLFW.glfwGetKeyName(selectedModule.getKey(), 0) == null ? "?" :
+                    GLFW.glfwGetKeyName(selectedModule.getKey(), 0).toUpperCase());
+            context.drawTextWithShadow(textRenderer, keyName, settingsX + settingsPanelWidth - 70, settingsY + 5, 0x00FFFF);
+            settingsY += rowHeight + 4;
+
+            // Остальные настройки
             List<Field> settingFields = getSettingFields(selectedModule);
-            int maxSettings = (height - 90) / rowHeight;
+            int maxSettings = (height - 110) / rowHeight;
             int sStart = Math.min(settingsScroll, Math.max(0, settingFields.size() - maxSettings));
             int sEnd = Math.min(sStart + maxSettings, settingFields.size());
 
             for (int i = sStart; i < sEnd; i++) {
                 Field field = settingFields.get(i);
                 Setting setting = field.getAnnotation(Setting.class);
-                if (setting == null) continue;
                 try {
                     field.setAccessible(true);
                     Object value = field.get(selectedModule);
@@ -97,7 +115,6 @@ public class ClickGUI extends Screen {
                     String display = formatValue(value, setting);
                     context.drawTextWithShadow(textRenderer, display, settingsX + settingsPanelWidth - 70, settingsY + 5, 0x00FFFF);
 
-                    // Слайдер для чисел
                     if (value instanceof Number) {
                         double num = ((Number) value).doubleValue();
                         double min = setting.min();
@@ -111,7 +128,6 @@ public class ClickGUI extends Screen {
                             context.fill(sliderX, sliderY, sliderX + (int)(norm * sliderW), sliderY + 2, 0xFF00AA00);
                         }
                     }
-
                     settingsY += rowHeight;
                 } catch (IllegalAccessException ignored) {}
             }
@@ -122,9 +138,7 @@ public class ClickGUI extends Screen {
 
     private String formatValue(Object value, Setting setting) {
         if (value instanceof Boolean b) return b ? "ON" : "OFF";
-        if (value instanceof Number n) {
-            return String.format("%." + setting.decimalPlaces() + "f", n.doubleValue());
-        }
+        if (value instanceof Number n) return String.format("%." + setting.decimalPlaces() + "f", n.doubleValue());
         return value.toString();
     }
 
@@ -138,6 +152,7 @@ public class ClickGUI extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        // Категории
         int catY = 38;
         for (Category cat : Category.values()) {
             if (mouseX >= 10 && mouseX <= 10 + categoryPanelWidth && mouseY >= catY && mouseY < catY + rowHeight) {
@@ -149,6 +164,7 @@ public class ClickGUI extends Screen {
             catY += rowHeight;
         }
 
+        // Модули
         List<Module> modules = new ArrayList<>(CheatClient.moduleManager.getModulesInCategory(selectedCategory));
         int moduleY = 38;
         int maxVisible = (height - 50) / rowHeight;
@@ -159,23 +175,32 @@ public class ClickGUI extends Screen {
             if (mouseX >= 10 + categoryPanelWidth && mouseX <= 10 + categoryPanelWidth + modulePanelWidth
                     && mouseY >= moduleY && mouseY < moduleY + rowHeight) {
                 Module mod = modules.get(i);
-                if (button == 0) {
-                    mod.toggle();
-                } else if (button == 1) {
+                if (button == 0) mod.toggle();
+                else if (button == 1) {
                     selectedModule = (selectedModule == mod) ? null : mod;
                     settingsScroll = 0;
+                    bindingModule = null;
                 }
                 return true;
             }
             moduleY += rowHeight;
         }
 
-        // Клик по настройкам
+        // Настройки
         if (selectedModule != null) {
             int settingsX = 10 + categoryPanelWidth + modulePanelWidth;
             int settingsY = 38 + headerHeight + 4;
+
+            // Кнопка бинда
+            if (mouseX >= settingsX + 4 && mouseX <= settingsX + settingsPanelWidth - 4
+                    && mouseY >= settingsY && mouseY < settingsY + rowHeight) {
+                bindingModule = (bindingModule == selectedModule) ? null : selectedModule;
+                return true;
+            }
+            settingsY += rowHeight + 4;
+
             List<Field> settingFields = getSettingFields(selectedModule);
-            int maxSettings = (height - 90) / rowHeight;
+            int maxSettings = (height - 110) / rowHeight;
             int sStart = Math.min(settingsScroll, Math.max(0, settingFields.size() - maxSettings));
             int sEnd = Math.min(sStart + maxSettings, settingFields.size());
 
@@ -191,7 +216,6 @@ public class ClickGUI extends Screen {
                         if (value instanceof Boolean) {
                             field.setBoolean(selectedModule, !(Boolean) value);
                         } else if (value instanceof Number) {
-                            // Слайдер по X позиции мыши
                             int sliderX = settingsX + 8;
                             int sliderW = settingsPanelWidth - 16;
                             double norm = (mouseX - sliderX) / (double) sliderW;
@@ -208,6 +232,7 @@ public class ClickGUI extends Screen {
                                 field.set(selectedModule, options[idx]);
                             }
                         }
+                        selectedModule.saveConfig();
                     } catch (IllegalAccessException ignored) {}
                     return true;
                 }
@@ -215,6 +240,25 @@ public class ClickGUI extends Screen {
             }
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        // Если ждём бинд — сохраняем клавишу
+        if (bindingModule != null) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_DELETE) {
+                bindingModule.setKey(-1); // сброс бинда
+            } else {
+                bindingModule.setKey(keyCode);
+            }
+            bindingModule = null;
+            return true;
+        }
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            this.close();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
