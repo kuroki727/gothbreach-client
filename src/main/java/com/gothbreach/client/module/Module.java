@@ -17,7 +17,7 @@ public abstract class Module {
     private final String description;
     private final Category category;
     private boolean enabled = false;
-    private int key = -1; // -1 = нет бинда
+    private int key = -1;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path CONFIG_DIR = Path.of("gothbreach_config");
     private static final Path MODULES_DIR = CONFIG_DIR.resolve("modules");
@@ -53,7 +53,17 @@ public abstract class Module {
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public int getKey() { return key; }
-    public void setKey(int key) { this.key = key; saveConfig(); }
+
+    public void setKey(int key) {
+        this.key = key;
+        saveConfig();
+    }
+
+    /**
+     * Если true — модуль не включается/выключается, а только открывает настройки.
+     * Используется для модулей, которые являются чисто настройками клиента.
+     */
+    public boolean isSettingsOnly() { return false; }
 
     // ===== Сохранение конфига =====
     public void saveConfig() {
