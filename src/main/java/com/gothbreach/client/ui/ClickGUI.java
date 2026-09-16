@@ -14,12 +14,12 @@ import java.util.*;
 
 public class ClickGUI extends Screen {
     // === Размеры (компактные, Meteor-style) ===
-    private static final int PANEL_WIDTH = 110;
+    private static final int PANEL_WIDTH = 120;
     private static final int ROW_HEIGHT = 13;
     private static final int HEADER_HEIGHT = 14;
     private static final int SETTING_ROW = 12;
 
-    // === Цвета (тёмная тема, Meteor-inspired) ===
+    // === Цвета (тёмная тема) ===
     private static final int BG_DIM = 0x80000000;
     private static final int PANEL_BG = 0xF01A1A1A;
     private static final int HEADER_BG = 0xF02A2A2A;
@@ -35,6 +35,8 @@ public class ClickGUI extends Screen {
     private static final int RED = 0xFFEF4444;
     private static final int SEARCH_BG = 0xFF1E1E1E;
     private static final int SEARCH_BORDER = 0xFF3B82F6;
+    private static final int INPUT_BG = 0xFF0D0D0D;
+    private static final int INPUT_BORDER = 0xFF3B82F6;
 
     // === Состояние ===
     private final Map<Category, Panel> panels = new LinkedHashMap<>();
@@ -46,6 +48,11 @@ public class ClickGUI extends Screen {
 
     private String searchQuery = "";
     private boolean searchFocused = false;
+
+    // === Текстовый ввод ===
+    private Module inputModule = null;
+    private Field inputField = null;
+    private String inputText = "";
 
     private static class Panel {
         Category category;
@@ -69,15 +76,17 @@ public class ClickGUI extends Screen {
 
     @Override
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
-        // Затемнение фона
         ctx.fill(0, 0, width, height, BG_DIM);
 
-        // Поиск сверху
         renderSearch(ctx, mouseX, mouseY);
 
-        // Панели категорий
         for (Panel panel : panels.values()) {
             renderPanel(ctx, panel, mouseX, mouseY);
+        }
+
+        // Отрисовка активного текстового поля поверх всего
+        if (inputModule != null && inputField != null) {
+            renderInputField(ctx, mouseX, mouseY);
         }
 
         super.render(ctx, mouseX, mouseY, delta);
@@ -111,22 +120,16 @@ public class ClickGUI extends Screen {
     }
 
     private void renderPanel(DrawContext ctx, Panel panel, int mouseX, int mouseY) {
-        // Заголовок
         ctx.fill(panel.x, panel.y, panel.x + PANEL_WIDTH, panel.y + HEADER_HEIGHT, HEADER_BG);
         ctx.drawTextWithShadow(textRenderer, panel.category.getName(), panel.x + 4, panel.y + 3, 0xFFFFFFFF);
 
-        // Индикатор свернутой панели
         String indicator = panel.collapsed ? "+" : "-";
         int indW = textRenderer.getWidth(indicator);
         ctx.drawTextWithShadow(textRenderer, indicator, panel.x + PANEL_WIDTH - indW - 3, panel.y + 3, TEXT_DIM);
 
         if (panel.collapsed) return;
 
-        // Фон панели
         List<Module> modules = getFilteredModules(panel.category);
-        int totalHeight = modules.size() * ROW_HEIGHT;
-        // (Расширенные настройки не влияют на фон, т.к. рисуются поверх)
-
         int y = panel.y + HEADER_HEIGHT;
 
         for (Module mod : modules) {
@@ -143,16 +146,13 @@ public class ClickGUI extends Screen {
 
             ctx.fill(panel.x, y, panel.x + PANEL_WIDTH, y + ROW_HEIGHT, bg);
 
-            // Акцентная полоска слева при включённом модуле
             if (enabled) {
                 ctx.fill(panel.x, y, panel.x + 2, y + ROW_HEIGHT, ACCENT);
             }
 
-            // Имя
             int textColor = enabled ? 0xFFFFFFFF : TEXT;
             ctx.drawTextWithShadow(textRenderer, mod.getName(), panel.x + 5, y + 2, textColor);
 
-            // Бинд справа
             if (mod.getKey() != -1) {
                 String keyName = getKeyName(mod.getKey());
                 if (keyName != null) {
@@ -163,7 +163,6 @@ public class ClickGUI extends Screen {
 
             y += ROW_HEIGHT;
 
-            // Развёрнутые настройки
             if (selected) {
                 y = renderSettings(ctx, mod, panel.x, y, mouseX, mouseY);
             }
@@ -171,10 +170,8 @@ public class ClickGUI extends Screen {
     }
 
     private int renderSettings(DrawContext ctx, Module mod, int panelX, int y, int mouseX, int mouseY) {
-        // Строка "Bind"
         y = renderBindRow(ctx, mod, panelX, y, mouseX, mouseY);
 
-        // Остальные настройки
         List<Field> fields = getSettingFields(mod);
         for (Field field : fields) {
             Setting s = field.getAnnotation(Setting.class);
@@ -199,9 +196,12 @@ public class ClickGUI extends Screen {
                 } else if (value instanceof Number n) {
                     String txt = formatNumber(n, s);
                     int w = textRenderer.getWidth(txt);
-                    ctx.drawTextWithShadow(textRenderer, txt, panelX + PANEL_WIDTH - w - 5, y + 2, ACCENT);
+                    // Если это активное поле ввода — рисуем по-другому
+                    boolean isInput = (mod == inputModule && field == inputField);
+                    int txtColor = isInput ? 0xFFFFAA00 : ACCENT;
+                    ctx.drawTextWithShadow(textRenderer, txt, panelX + PANEL_WIDTH - w - 5, y + 2, txtColor);
 
-                    // Слайдер внизу строки
+                    // Слайдер
                     double range = s.max() - s.min();
                     if (range > 0) {
                         double num = n.doubleValue();
@@ -243,6 +243,52 @@ public class ClickGUI extends Screen {
         int w = textRenderer.getWidth(keyName);
         ctx.drawTextWithShadow(textRenderer, keyName, panelX + PANEL_WIDTH - w - 5, y + 2, color);
 
+        return y + SETTING_ROW;
+    }
+
+    private void renderInputField(DrawContext ctx, int mouseX, int mouseY) {
+        // Определяем позицию поля на основе настроек модуля
+        Panel panel = null;
+        for (Panel p : panels.values()) {
+            if (p.category == inputModule.getCategory()) {
+                panel = p;
+                break;
+            }
+        }
+        if (panel == null || panel.collapsed) return;
+
+        List<Module> modules = getFilteredModules(panel.category);
+        int y = panel.y + HEADER_HEIGHT;
+        for (Module mod : modules) {
+            if (mod == inputModule) {
+                y += ROW_HEIGHT; // после модуля
+                y = renderBindRowHeight(y); // Bind
+                for (Field field : getSettingFields(mod)) {
+                    if (field == inputField) {
+                        int x = panel.x + PANEL_WIDTH - 60;
+                        int w = 55;
+                        int h = SETTING_ROW - 2;
+                        ctx.fill(x, y - 1, x + w, y + h, INPUT_BG);
+                        ctx.fill(x, y - 1, x + w, y, INPUT_BORDER);
+                        ctx.fill(x, y + h - 1, x + w, y + h, INPUT_BORDER);
+                        ctx.fill(x, y - 1, x + 1, y + h, INPUT_BORDER);
+                        ctx.fill(x + w - 1, y - 1, x + w, y + h, INPUT_BORDER);
+                        ctx.drawTextWithShadow(textRenderer, inputText + "_", x + 3, y + 1, 0xFFFFFFFF);
+                        return;
+                    }
+                    y += SETTING_ROW;
+                }
+            } else {
+                y += ROW_HEIGHT;
+                if (mod == selectedModule) {
+                    y = renderBindRowHeight(y);
+                    y += getSettingFields(mod).size() * SETTING_ROW;
+                }
+            }
+        }
+    }
+
+    private int renderBindRowHeight(int y) {
         return y + SETTING_ROW;
     }
 
@@ -301,6 +347,17 @@ public class ClickGUI extends Screen {
         int mouseX = (int) mx;
         int mouseY = (int) my;
 
+        // Если открыто поле ввода — клик вне него закрывает его
+        if (inputModule != null) {
+            // Проверяем, попал ли клик в поле
+            if (isClickInInputField(mouseX, mouseY)) {
+                return true;
+            } else {
+                applyInput();
+                return true;
+            }
+        }
+
         // Поиск
         int searchW = 160;
         int searchX = (width - searchW) / 2;
@@ -310,12 +367,10 @@ public class ClickGUI extends Screen {
         }
         searchFocused = false;
 
-        // Идём по панелям в обратном порядке (верхняя — последняя в map)
         List<Panel> list = new ArrayList<>(panels.values());
         Collections.reverse(list);
 
         for (Panel panel : list) {
-            // Заголовок — перетаскивание или сворачивание
             if (mouseX >= panel.x && mouseX <= panel.x + PANEL_WIDTH
                     && mouseY >= panel.y && mouseY < panel.y + HEADER_HEIGHT) {
                 if (button == 0) {
@@ -325,7 +380,6 @@ public class ClickGUI extends Screen {
                 } else if (button == 1) {
                     panel.collapsed = !panel.collapsed;
                 }
-                // Наверх
                 panels.remove(panel.category);
                 panels.put(panel.category, panel);
                 return true;
@@ -337,32 +391,72 @@ public class ClickGUI extends Screen {
             int y = panel.y + HEADER_HEIGHT;
 
             for (Module mod : modules) {
-                // Клик по модулю
                 if (mouseX >= panel.x && mouseX <= panel.x + PANEL_WIDTH
                         && mouseY >= y && mouseY < y + ROW_HEIGHT) {
                     if (button == 0) mod.toggle();
                     else if (button == 1) {
                         selectedModule = (selectedModule == mod) ? null : mod;
                         bindingModule = null;
+                        if (inputModule != null) applyInput();
                     }
                     return true;
                 }
                 y += ROW_HEIGHT;
 
                 if (mod == selectedModule) {
-                    // Строка Bind
+                    // Bind
                     if (mouseX >= panel.x + 2 && mouseX <= panel.x + PANEL_WIDTH - 2
                             && mouseY >= y && mouseY < y + SETTING_ROW) {
                         bindingModule = (bindingModule == mod) ? null : mod;
+                        if (inputModule != null) applyInput();
                         return true;
                     }
                     y += SETTING_ROW;
 
-                    // Остальные настройки
+                    // Настройки
                     for (Field field : getSettingFields(mod)) {
                         if (mouseX >= panel.x + 2 && mouseX <= panel.x + PANEL_WIDTH - 2
                                 && mouseY >= y && mouseY < y + SETTING_ROW) {
-                            handleSettingClick(mod, field, mouseX, panel.x);
+                            Setting s = field.getAnnotation(Setting.class);
+                            try {
+                                field.setAccessible(true);
+                                Object value = field.get(mod);
+
+                                if (value instanceof Boolean) {
+                                    field.setBoolean(mod, !(Boolean) value);
+                                    mod.saveConfig();
+                                } else if (value instanceof Number) {
+                                    // Определяем, куда попал клик: на слайдер или на текст
+                                    int valueX = panel.x + PANEL_WIDTH - 60;
+                                    if (mouseX >= valueX) {
+                                        // Клик по значению — открываем ввод
+                                        if (inputModule != null) applyInput();
+                                        inputModule = mod;
+                                        inputField = field;
+                                        inputText = formatNumber((Number) value, s);
+                                    } else {
+                                        // Клик по слайдеру — меняем значение
+                                        int sliderX = panel.x + 3;
+                                        int sliderW = PANEL_WIDTH - 6;
+                                        double norm = (mouseX - sliderX) / (double) sliderW;
+                                        norm = Math.max(0, Math.min(1, norm));
+                                        double newVal = s.min() + norm * (s.max() - s.min());
+                                        if (value instanceof Integer) field.setInt(mod, (int) newVal);
+                                        else if (value instanceof Double) field.setDouble(mod, newVal);
+                                        else if (value instanceof Float) field.setFloat(mod, (float) newVal);
+                                        else if (value instanceof Long) field.setLong(mod, (long) newVal);
+                                        mod.saveConfig();
+                                    }
+                                } else if (value instanceof String) {
+                                    String[] opts = s.values();
+                                    if (opts.length > 0) {
+                                        int idx = Arrays.asList(opts).indexOf(value);
+                                        idx = (idx + 1) % opts.length;
+                                        field.set(mod, opts[idx]);
+                                        mod.saveConfig();
+                                    }
+                                }
+                            } catch (Exception ignored) {}
                             return true;
                         }
                         y += SETTING_ROW;
@@ -374,35 +468,59 @@ public class ClickGUI extends Screen {
         return super.mouseClicked(mx, my, button);
     }
 
-    private void handleSettingClick(Module mod, Field field, int mouseX, int panelX) {
-        Setting s = field.getAnnotation(Setting.class);
-        try {
-            field.setAccessible(true);
-            Object value = field.get(mod);
-
-            if (value instanceof Boolean) {
-                field.setBoolean(mod, !(Boolean) value);
-            } else if (value instanceof Number) {
-                int sliderX = panelX + 3;
-                int sliderW = PANEL_WIDTH - 6;
-                double norm = (mouseX - sliderX) / (double) sliderW;
-                norm = Math.max(0, Math.min(1, norm));
-                double newVal = s.min() + norm * (s.max() - s.min());
-
-                if (value instanceof Integer) field.setInt(mod, (int) newVal);
-                else if (value instanceof Double) field.setDouble(mod, newVal);
-                else if (value instanceof Float) field.setFloat(mod, (float) newVal);
-                else if (value instanceof Long) field.setLong(mod, (long) newVal);
-            } else if (value instanceof String) {
-                String[] opts = s.values();
-                if (opts.length > 0) {
-                    int idx = Arrays.asList(opts).indexOf(value);
-                    idx = (idx + 1) % opts.length;
-                    field.set(mod, opts[idx]);
+    private boolean isClickInInputField(int mouseX, int mouseY) {
+        if (inputModule == null || inputField == null) return false;
+        Panel panel = panels.get(inputModule.getCategory());
+        if (panel == null || panel.collapsed) return false;
+        List<Module> modules = getFilteredModules(panel.category);
+        int y = panel.y + HEADER_HEIGHT;
+        for (Module mod : modules) {
+            if (mod == inputModule) {
+                y += ROW_HEIGHT;
+                y += SETTING_ROW; // Bind
+                for (Field field : getSettingFields(mod)) {
+                    if (field == inputField) {
+                        int x = panel.x + PANEL_WIDTH - 60;
+                        int w = 55;
+                        int h = SETTING_ROW - 2;
+                        return mouseX >= x && mouseX <= x + w && mouseY >= y - 1 && mouseY <= y + h;
+                    }
+                    y += SETTING_ROW;
+                }
+            } else {
+                y += ROW_HEIGHT;
+                if (mod == selectedModule) {
+                    y += SETTING_ROW;
+                    y += getSettingFields(mod).size() * SETTING_ROW;
                 }
             }
-            mod.saveConfig();
+        }
+        return false;
+    }
+
+    private void applyInput() {
+        if (inputModule == null || inputField == null) {
+            inputModule = null;
+            inputField = null;
+            inputText = "";
+            return;
+        }
+        try {
+            inputField.setAccessible(true);
+            Object value = inputField.get(inputModule);
+            Setting s = inputField.getAnnotation(Setting.class);
+            double parsed = Double.parseDouble(inputText);
+            parsed = Math.max(s.min(), Math.min(s.max(), parsed));
+
+            if (value instanceof Integer) inputField.setInt(inputModule, (int) parsed);
+            else if (value instanceof Double) inputField.setDouble(inputModule, parsed);
+            else if (value instanceof Float) inputField.setFloat(inputModule, (float) parsed);
+            else if (value instanceof Long) inputField.setLong(inputModule, (long) parsed);
+            inputModule.saveConfig();
         } catch (Exception ignored) {}
+        inputModule = null;
+        inputField = null;
+        inputText = "";
     }
 
     @Override
@@ -426,6 +544,27 @@ public class ClickGUI extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        // Режим ввода числа
+        if (inputModule != null && inputField != null) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                inputModule = null;
+                inputField = null;
+                inputText = "";
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER) {
+                applyInput();
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                if (!inputText.isEmpty()) {
+                    inputText = inputText.substring(0, inputText.length() - 1);
+                }
+                return true;
+            }
+            return true;
+        }
+
         // Режим бинда
         if (bindingModule != null) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_DELETE) {
@@ -437,7 +576,7 @@ public class ClickGUI extends Screen {
             return true;
         }
 
-        // Ввод в поиске
+        // Поиск
         if (searchFocused) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 searchFocused = false;
@@ -466,6 +605,15 @@ public class ClickGUI extends Screen {
 
     @Override
     public boolean charTyped(char chr, int modifiers) {
+        // Ввод числа
+        if (inputModule != null && inputField != null) {
+            if (chr >= '0' && chr <= '9' || chr == '.' || chr == '-') {
+                inputText += chr;
+            }
+            return true;
+        }
+
+        // Поиск
         if (searchFocused && chr >= 32 && chr != 127) {
             searchQuery += chr;
             return true;
