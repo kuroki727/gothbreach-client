@@ -10,136 +10,282 @@ import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
 import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 
 public class ClickGUI extends Screen {
-    private Category selectedCategory = Category.COMBAT;
-    private Module selectedModule = null;
-    private int scrollOffset = 0;
-    private int settingsScroll = 0;
-    private Module bindingModule = null; // модуль, для которого ждём нажатия клавиши
+    // === Размеры (компактные, Meteor-style) ===
+    private static final int PANEL_WIDTH = 110;
+    private static final int ROW_HEIGHT = 13;
+    private static final int HEADER_HEIGHT = 14;
+    private static final int SETTING_ROW = 12;
 
-    private final int rowHeight = 18;
-    private final int headerHeight = 22;
-    private final int categoryPanelWidth = 90;
-    private final int modulePanelWidth = 140;
-    private final int settingsPanelWidth = 220;
+    // === Цвета (тёмная тема, Meteor-inspired) ===
+    private static final int BG_DIM = 0x80000000;
+    private static final int PANEL_BG = 0xF01A1A1A;
+    private static final int HEADER_BG = 0xF02A2A2A;
+    private static final int ROW_BG = 0xFF1E1E1E;
+    private static final int ROW_HOVER = 0xFF252525;
+    private static final int ROW_ENABLED = 0xFF2A2A2A;
+    private static final int ROW_SELECTED = 0xFF3A3A3A;
+    private static final int TEXT = 0xFFD0D0D0;
+    private static final int TEXT_DIM = 0xFF707070;
+    private static final int ACCENT = 0xFF3B82F6;
+    private static final int SLIDER_BG = 0xFF151515;
+    private static final int GREEN = 0xFF10B981;
+    private static final int RED = 0xFFEF4444;
+    private static final int SEARCH_BG = 0xFF1E1E1E;
+    private static final int SEARCH_BORDER = 0xFF3B82F6;
+
+    // === Состояние ===
+    private final Map<Category, Panel> panels = new LinkedHashMap<>();
+    private Panel draggingPanel = null;
+    private int dragDX, dragDY;
+
+    private Module selectedModule = null;
+    private Module bindingModule = null;
+
+    private String searchQuery = "";
+    private boolean searchFocused = false;
+
+    private static class Panel {
+        Category category;
+        int x, y;
+        boolean collapsed;
+        Panel(Category c, int x, int y) {
+            this.category = c;
+            this.x = x;
+            this.y = y;
+        }
+    }
 
     public ClickGUI() {
-        super(Text.literal("Gothbreach Client"));
+        super(Text.literal("Gothbreach"));
+        int x = 15;
+        for (Category cat : Category.values()) {
+            panels.put(cat, new Panel(cat, x, 20));
+            x += PANEL_WIDTH + 4;
+        }
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        context.fill(0, 0, width, height, 0x80000000);
+    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+        // Затемнение фона
+        ctx.fill(0, 0, width, height, BG_DIM);
 
-        context.fill(10, 10, 10 + categoryPanelWidth + modulePanelWidth + settingsPanelWidth, 32, 0xFF202020);
-        context.drawTextWithShadow(textRenderer, "Gothbreach Client", 16, 17, 0xFFFFFF);
+        // Поиск сверху
+        renderSearch(ctx, mouseX, mouseY);
 
-        int catY = 38;
-        int moduleY = 38;
-        int settingsY = 38;
-        int settingsX = 10 + categoryPanelWidth + modulePanelWidth;
-
-        // Категории
-        for (Category cat : Category.values()) {
-            boolean selected = cat == selectedCategory;
-            context.fill(10, catY, 10 + categoryPanelWidth, catY + rowHeight, selected ? 0xFF00AA00 : 0xFF303030);
-            context.drawTextWithShadow(textRenderer, cat.getName(), 16, catY + 5, 0xFFFFFF);
-            catY += rowHeight;
+        // Панели категорий
+        for (Panel panel : panels.values()) {
+            renderPanel(ctx, panel, mouseX, mouseY);
         }
 
-        // Модули
-        List<Module> modules = new ArrayList<>(CheatClient.moduleManager.getModulesInCategory(selectedCategory));
-        int maxVisible = (height - 50) / rowHeight;
-        int start = Math.min(scrollOffset, Math.max(0, modules.size() - maxVisible));
-        int end = Math.min(start + maxVisible, modules.size());
-
-        for (int i = start; i < end; i++) {
-            Module mod = modules.get(i);
-            boolean enabled = mod.isEnabled();
-            boolean hovered = mouseX >= 10 + categoryPanelWidth && mouseX <= 10 + categoryPanelWidth + modulePanelWidth
-                    && mouseY >= moduleY && mouseY < moduleY + rowHeight;
-
-            int bg = enabled ? 0xFF005500 : (hovered ? 0xFF505050 : 0xFF303030);
-            if (mod == selectedModule) bg = 0xFF5050AA;
-
-            context.fill(10 + categoryPanelWidth, moduleY, 10 + categoryPanelWidth + modulePanelWidth, moduleY + rowHeight, bg);
-            context.drawTextWithShadow(textRenderer, mod.getName(), 16 + categoryPanelWidth, moduleY + 5,
-                    enabled ? 0x00FF00 : 0xFFFFFF);
-
-            // Показываем бинд справа
-            String bindText = mod.getKey() == -1 ? "" : GLFW.glfwGetKeyName(mod.getKey(), 0);
-            if (bindText != null && !bindText.isEmpty()) {
-                context.drawTextWithShadow(textRenderer, "[" + bindText.toUpperCase() + "]",
-                        10 + categoryPanelWidth + modulePanelWidth - 40, moduleY + 5, 0xFFFF00);
-            }
-            moduleY += rowHeight;
-        }
-
-        // Настройки
-        if (selectedModule != null) {
-            context.fill(settingsX, settingsY, settingsX + settingsPanelWidth, height - 10, 0xFF181818);
-            context.drawTextWithShadow(textRenderer, selectedModule.getName(), settingsX + 6, settingsY + 5, 0xFFFF00);
-            settingsY += headerHeight + 4;
-
-            // Кнопка бинда
-            int bindBg = (bindingModule == selectedModule) ? 0xFFAA5500 : 0xFF282828;
-            context.fill(settingsX + 4, settingsY, settingsX + settingsPanelWidth - 4, settingsY + rowHeight, bindBg);
-            context.drawTextWithShadow(textRenderer, "Бинд", settingsX + 8, settingsY + 5, 0xFFFFFF);
-            String keyName = selectedModule.getKey() == -1 ? "Нет" :
-                    (GLFW.glfwGetKeyName(selectedModule.getKey(), 0) == null ? "?" :
-                    GLFW.glfwGetKeyName(selectedModule.getKey(), 0).toUpperCase());
-            context.drawTextWithShadow(textRenderer, keyName, settingsX + settingsPanelWidth - 70, settingsY + 5, 0x00FFFF);
-            settingsY += rowHeight + 4;
-
-            // Остальные настройки
-            List<Field> settingFields = getSettingFields(selectedModule);
-            int maxSettings = (height - 110) / rowHeight;
-            int sStart = Math.min(settingsScroll, Math.max(0, settingFields.size() - maxSettings));
-            int sEnd = Math.min(sStart + maxSettings, settingFields.size());
-
-            for (int i = sStart; i < sEnd; i++) {
-                Field field = settingFields.get(i);
-                Setting setting = field.getAnnotation(Setting.class);
-                try {
-                    field.setAccessible(true);
-                    Object value = field.get(selectedModule);
-                    String label = setting.name().isEmpty() ? field.getName() : setting.name();
-
-                    context.fill(settingsX + 4, settingsY, settingsX + settingsPanelWidth - 4, settingsY + rowHeight, 0xFF282828);
-                    context.drawTextWithShadow(textRenderer, label, settingsX + 8, settingsY + 5, 0xFFFFFF);
-
-                    String display = formatValue(value, setting);
-                    context.drawTextWithShadow(textRenderer, display, settingsX + settingsPanelWidth - 70, settingsY + 5, 0x00FFFF);
-
-                    if (value instanceof Number) {
-                        double num = ((Number) value).doubleValue();
-                        double min = setting.min();
-                        double max = setting.max();
-                        if (max > min) {
-                            double norm = (num - min) / (max - min);
-                            int sliderX = settingsX + 8;
-                            int sliderW = settingsPanelWidth - 16;
-                            int sliderY = settingsY + rowHeight - 4;
-                            context.fill(sliderX, sliderY, sliderX + sliderW, sliderY + 2, 0xFF404040);
-                            context.fill(sliderX, sliderY, sliderX + (int)(norm * sliderW), sliderY + 2, 0xFF00AA00);
-                        }
-                    }
-                    settingsY += rowHeight;
-                } catch (IllegalAccessException ignored) {}
-            }
-        }
-
-        super.render(context, mouseX, mouseY, delta);
+        super.render(ctx, mouseX, mouseY, delta);
     }
 
-    private String formatValue(Object value, Setting setting) {
-        if (value instanceof Boolean b) return b ? "ON" : "OFF";
-        if (value instanceof Number n) return String.format("%." + setting.decimalPlaces() + "f", n.doubleValue());
-        return value.toString();
+    private void renderSearch(DrawContext ctx, int mouseX, int mouseY) {
+        int searchW = 160;
+        int searchH = 14;
+        int searchX = (width - searchW) / 2;
+        int searchY = 3;
+
+        ctx.fill(searchX, searchY, searchX + searchW, searchY + searchH, SEARCH_BG);
+
+        if (searchFocused) {
+            ctx.fill(searchX, searchY, searchX + searchW, searchY + 1, SEARCH_BORDER);
+            ctx.fill(searchX, searchY + searchH - 1, searchX + searchW, searchY + searchH, SEARCH_BORDER);
+            ctx.fill(searchX, searchY, searchX + 1, searchY + searchH, SEARCH_BORDER);
+            ctx.fill(searchX + searchW - 1, searchY, searchX + searchW, searchY + searchH, SEARCH_BORDER);
+        }
+
+        String display;
+        int color;
+        if (searchQuery.isEmpty() && !searchFocused) {
+            display = "Search...";
+            color = TEXT_DIM;
+        } else {
+            display = searchQuery + (searchFocused ? "_" : "");
+            color = 0xFFFFFFFF;
+        }
+        ctx.drawTextWithShadow(textRenderer, display, searchX + 4, searchY + 3, color);
+    }
+
+    private void renderPanel(DrawContext ctx, Panel panel, int mouseX, int mouseY) {
+        // Заголовок
+        ctx.fill(panel.x, panel.y, panel.x + PANEL_WIDTH, panel.y + HEADER_HEIGHT, HEADER_BG);
+        ctx.drawTextWithShadow(textRenderer, panel.category.getName(), panel.x + 4, panel.y + 3, 0xFFFFFFFF);
+
+        // Индикатор свернутой панели
+        String indicator = panel.collapsed ? "+" : "-";
+        int indW = textRenderer.getWidth(indicator);
+        ctx.drawTextWithShadow(textRenderer, indicator, panel.x + PANEL_WIDTH - indW - 3, panel.y + 3, TEXT_DIM);
+
+        if (panel.collapsed) return;
+
+        // Фон панели
+        List<Module> modules = getFilteredModules(panel.category);
+        int totalHeight = modules.size() * ROW_HEIGHT;
+        // (Расширенные настройки не влияют на фон, т.к. рисуются поверх)
+
+        int y = panel.y + HEADER_HEIGHT;
+
+        for (Module mod : modules) {
+            boolean enabled = mod.isEnabled();
+            boolean selected = mod == selectedModule;
+            boolean hovered = mouseX >= panel.x && mouseX <= panel.x + PANEL_WIDTH
+                    && mouseY >= y && mouseY < y + ROW_HEIGHT;
+
+            int bg;
+            if (selected) bg = ROW_SELECTED;
+            else if (enabled) bg = ROW_ENABLED;
+            else if (hovered) bg = ROW_HOVER;
+            else bg = ROW_BG;
+
+            ctx.fill(panel.x, y, panel.x + PANEL_WIDTH, y + ROW_HEIGHT, bg);
+
+            // Акцентная полоска слева при включённом модуле
+            if (enabled) {
+                ctx.fill(panel.x, y, panel.x + 2, y + ROW_HEIGHT, ACCENT);
+            }
+
+            // Имя
+            int textColor = enabled ? 0xFFFFFFFF : TEXT;
+            ctx.drawTextWithShadow(textRenderer, mod.getName(), panel.x + 5, y + 2, textColor);
+
+            // Бинд справа
+            if (mod.getKey() != -1) {
+                String keyName = getKeyName(mod.getKey());
+                if (keyName != null) {
+                    int kw = textRenderer.getWidth(keyName);
+                    ctx.drawTextWithShadow(textRenderer, keyName, panel.x + PANEL_WIDTH - kw - 3, y + 2, TEXT_DIM);
+                }
+            }
+
+            y += ROW_HEIGHT;
+
+            // Развёрнутые настройки
+            if (selected) {
+                y = renderSettings(ctx, mod, panel.x, y, mouseX, mouseY);
+            }
+        }
+    }
+
+    private int renderSettings(DrawContext ctx, Module mod, int panelX, int y, int mouseX, int mouseY) {
+        // Строка "Bind"
+        y = renderBindRow(ctx, mod, panelX, y, mouseX, mouseY);
+
+        // Остальные настройки
+        List<Field> fields = getSettingFields(mod);
+        for (Field field : fields) {
+            Setting s = field.getAnnotation(Setting.class);
+            try {
+                field.setAccessible(true);
+                Object value = field.get(mod);
+                String name = s.name().isEmpty() ? field.getName() : s.name();
+
+                boolean hovered = mouseX >= panelX + 2 && mouseX <= panelX + PANEL_WIDTH - 2
+                        && mouseY >= y && mouseY < y + SETTING_ROW;
+
+                int bg = hovered ? 0xFF202020 : 0xFF161616;
+                ctx.fill(panelX + 2, y, panelX + PANEL_WIDTH - 2, y + SETTING_ROW, bg);
+
+                ctx.drawTextWithShadow(textRenderer, name, panelX + 5, y + 2, TEXT);
+
+                if (value instanceof Boolean b) {
+                    String txt = b ? "ON" : "OFF";
+                    int color = b ? GREEN : RED;
+                    int w = textRenderer.getWidth(txt);
+                    ctx.drawTextWithShadow(textRenderer, txt, panelX + PANEL_WIDTH - w - 5, y + 2, color);
+                } else if (value instanceof Number n) {
+                    String txt = formatNumber(n, s);
+                    int w = textRenderer.getWidth(txt);
+                    ctx.drawTextWithShadow(textRenderer, txt, panelX + PANEL_WIDTH - w - 5, y + 2, ACCENT);
+
+                    // Слайдер внизу строки
+                    double range = s.max() - s.min();
+                    if (range > 0) {
+                        double num = n.doubleValue();
+                        double norm = Math.max(0, Math.min(1, (num - s.min()) / range));
+                        int sliderY = y + SETTING_ROW - 2;
+                        int sliderX = panelX + 3;
+                        int sliderW = PANEL_WIDTH - 6;
+                        ctx.fill(sliderX, sliderY, sliderX + sliderW, sliderY + 1, SLIDER_BG);
+                        ctx.fill(sliderX, sliderY, sliderX + (int)(norm * sliderW), sliderY + 1, ACCENT);
+                    }
+                } else if (value instanceof String str) {
+                    int w = textRenderer.getWidth(str);
+                    ctx.drawTextWithShadow(textRenderer, str, panelX + PANEL_WIDTH - w - 5, y + 2, ACCENT);
+                }
+
+                y += SETTING_ROW;
+            } catch (Exception ignored) {}
+        }
+        return y;
+    }
+
+    private int renderBindRow(DrawContext ctx, Module mod, int panelX, int y, int mouseX, int mouseY) {
+        boolean hovered = mouseX >= panelX + 2 && mouseX <= panelX + PANEL_WIDTH - 2
+                && mouseY >= y && mouseY < y + SETTING_ROW;
+        boolean isBinding = bindingModule == mod;
+
+        int bg;
+        if (isBinding) bg = 0xFF7A3A00;
+        else if (hovered) bg = 0xFF202020;
+        else bg = 0xFF161616;
+
+        ctx.fill(panelX + 2, y, panelX + PANEL_WIDTH - 2, y + SETTING_ROW, bg);
+        ctx.drawTextWithShadow(textRenderer, "Bind", panelX + 5, y + 2, TEXT);
+
+        String keyName = isBinding ? "..." :
+                (mod.getKey() == -1 ? "None" : getKeyName(mod.getKey()));
+        if (keyName == null) keyName = "None";
+        int color = isBinding ? 0xFFFFAA00 : (mod.getKey() == -1 ? TEXT_DIM : ACCENT);
+        int w = textRenderer.getWidth(keyName);
+        ctx.drawTextWithShadow(textRenderer, keyName, panelX + PANEL_WIDTH - w - 5, y + 2, color);
+
+        return y + SETTING_ROW;
+    }
+
+    private String formatNumber(Number n, Setting s) {
+        if (n instanceof Integer || n instanceof Long) return String.valueOf(n.intValue());
+        if (n instanceof Float f) {
+            if (f == f.intValue()) return String.valueOf(f.intValue());
+        }
+        return String.format("%." + s.decimalPlaces() + "f", n.doubleValue());
+    }
+
+    private String getKeyName(int key) {
+        if (key <= 0) return null;
+        String name = GLFW.glfwGetKeyName(key, 0);
+        if (name != null) return name.toUpperCase();
+        return switch (key) {
+            case GLFW.GLFW_KEY_RIGHT_SHIFT -> "RSHIFT";
+            case GLFW.GLFW_KEY_LEFT_SHIFT -> "LSHIFT";
+            case GLFW.GLFW_KEY_RIGHT_CONTROL -> "RCTRL";
+            case GLFW.GLFW_KEY_LEFT_CONTROL -> "LCTRL";
+            case GLFW.GLFW_KEY_RIGHT_ALT -> "RALT";
+            case GLFW.GLFW_KEY_LEFT_ALT -> "LALT";
+            case GLFW.GLFW_KEY_TAB -> "TAB";
+            case GLFW.GLFW_KEY_SPACE -> "SPACE";
+            case GLFW.GLFW_KEY_ENTER -> "ENTER";
+            case GLFW.GLFW_KEY_BACKSPACE -> "BKSP";
+            case GLFW.GLFW_KEY_UP -> "UP";
+            case GLFW.GLFW_KEY_DOWN -> "DOWN";
+            case GLFW.GLFW_KEY_LEFT -> "LEFT";
+            case GLFW.GLFW_KEY_RIGHT -> "RIGHT";
+            default -> "K" + key;
+        };
+    }
+
+    private List<Module> getFilteredModules(Category cat) {
+        List<Module> result = new ArrayList<>();
+        String q = searchQuery.toLowerCase();
+        for (Module m : CheatClient.moduleManager.getModulesInCategory(cat)) {
+            if (q.isEmpty() || m.getName().toLowerCase().contains(q)) {
+                result.add(m);
+            }
+        }
+        return result;
     }
 
     private List<Field> getSettingFields(Module mod) {
@@ -151,109 +297,166 @@ public class ClickGUI extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        // Категории
-        int catY = 38;
-        for (Category cat : Category.values()) {
-            if (mouseX >= 10 && mouseX <= 10 + categoryPanelWidth && mouseY >= catY && mouseY < catY + rowHeight) {
-                selectedCategory = cat;
-                selectedModule = null;
-                scrollOffset = 0;
-                return true;
-            }
-            catY += rowHeight;
+    public boolean mouseClicked(double mx, double my, int button) {
+        int mouseX = (int) mx;
+        int mouseY = (int) my;
+
+        // Поиск
+        int searchW = 160;
+        int searchX = (width - searchW) / 2;
+        if (mouseX >= searchX && mouseX <= searchX + searchW && mouseY >= 3 && mouseY <= 17) {
+            searchFocused = true;
+            return true;
         }
+        searchFocused = false;
 
-        // Модули
-        List<Module> modules = new ArrayList<>(CheatClient.moduleManager.getModulesInCategory(selectedCategory));
-        int moduleY = 38;
-        int maxVisible = (height - 50) / rowHeight;
-        int start = Math.min(scrollOffset, Math.max(0, modules.size() - maxVisible));
-        int end = Math.min(start + maxVisible, modules.size());
+        // Идём по панелям в обратном порядке (верхняя — последняя в map)
+        List<Panel> list = new ArrayList<>(panels.values());
+        Collections.reverse(list);
 
-        for (int i = start; i < end; i++) {
-            if (mouseX >= 10 + categoryPanelWidth && mouseX <= 10 + categoryPanelWidth + modulePanelWidth
-                    && mouseY >= moduleY && mouseY < moduleY + rowHeight) {
-                Module mod = modules.get(i);
-                if (button == 0) mod.toggle();
-                else if (button == 1) {
-                    selectedModule = (selectedModule == mod) ? null : mod;
-                    settingsScroll = 0;
-                    bindingModule = null;
+        for (Panel panel : list) {
+            // Заголовок — перетаскивание или сворачивание
+            if (mouseX >= panel.x && mouseX <= panel.x + PANEL_WIDTH
+                    && mouseY >= panel.y && mouseY < panel.y + HEADER_HEIGHT) {
+                if (button == 0) {
+                    draggingPanel = panel;
+                    dragDX = mouseX - panel.x;
+                    dragDY = mouseY - panel.y;
+                } else if (button == 1) {
+                    panel.collapsed = !panel.collapsed;
                 }
+                // Наверх
+                panels.remove(panel.category);
+                panels.put(panel.category, panel);
                 return true;
             }
-            moduleY += rowHeight;
-        }
 
-        // Настройки
-        if (selectedModule != null) {
-            int settingsX = 10 + categoryPanelWidth + modulePanelWidth;
-            int settingsY = 38 + headerHeight + 4;
+            if (panel.collapsed) continue;
 
-            // Кнопка бинда
-            if (mouseX >= settingsX + 4 && mouseX <= settingsX + settingsPanelWidth - 4
-                    && mouseY >= settingsY && mouseY < settingsY + rowHeight) {
-                bindingModule = (bindingModule == selectedModule) ? null : selectedModule;
-                return true;
-            }
-            settingsY += rowHeight + 4;
+            List<Module> modules = getFilteredModules(panel.category);
+            int y = panel.y + HEADER_HEIGHT;
 
-            List<Field> settingFields = getSettingFields(selectedModule);
-            int maxSettings = (height - 110) / rowHeight;
-            int sStart = Math.min(settingsScroll, Math.max(0, settingFields.size() - maxSettings));
-            int sEnd = Math.min(sStart + maxSettings, settingFields.size());
-
-            for (int i = sStart; i < sEnd; i++) {
-                Field field = settingFields.get(i);
-                if (mouseX >= settingsX + 4 && mouseX <= settingsX + settingsPanelWidth - 4
-                        && mouseY >= settingsY && mouseY < settingsY + rowHeight) {
-                    Setting setting = field.getAnnotation(Setting.class);
-                    try {
-                        field.setAccessible(true);
-                        Object value = field.get(selectedModule);
-
-                        if (value instanceof Boolean) {
-                            field.setBoolean(selectedModule, !(Boolean) value);
-                        } else if (value instanceof Number) {
-                            int sliderX = settingsX + 8;
-                            int sliderW = settingsPanelWidth - 16;
-                            double norm = (mouseX - sliderX) / (double) sliderW;
-                            norm = Math.max(0, Math.min(1, norm));
-                            double newVal = setting.min() + norm * (setting.max() - setting.min());
-                            if (value instanceof Integer) field.setInt(selectedModule, (int) newVal);
-                            else if (value instanceof Double) field.setDouble(selectedModule, newVal);
-                            else if (value instanceof Float) field.setFloat(selectedModule, (float) newVal);
-                        } else if (value instanceof String) {
-                            String[] options = setting.values();
-                            if (options.length > 0) {
-                                int idx = Arrays.asList(options).indexOf(value);
-                                idx = (idx + 1) % options.length;
-                                field.set(selectedModule, options[idx]);
-                            }
-                        }
-                        selectedModule.saveConfig();
-                    } catch (IllegalAccessException ignored) {}
+            for (Module mod : modules) {
+                // Клик по модулю
+                if (mouseX >= panel.x && mouseX <= panel.x + PANEL_WIDTH
+                        && mouseY >= y && mouseY < y + ROW_HEIGHT) {
+                    if (button == 0) mod.toggle();
+                    else if (button == 1) {
+                        selectedModule = (selectedModule == mod) ? null : mod;
+                        bindingModule = null;
+                    }
                     return true;
                 }
-                settingsY += rowHeight;
+                y += ROW_HEIGHT;
+
+                if (mod == selectedModule) {
+                    // Строка Bind
+                    if (mouseX >= panel.x + 2 && mouseX <= panel.x + PANEL_WIDTH - 2
+                            && mouseY >= y && mouseY < y + SETTING_ROW) {
+                        bindingModule = (bindingModule == mod) ? null : mod;
+                        return true;
+                    }
+                    y += SETTING_ROW;
+
+                    // Остальные настройки
+                    for (Field field : getSettingFields(mod)) {
+                        if (mouseX >= panel.x + 2 && mouseX <= panel.x + PANEL_WIDTH - 2
+                                && mouseY >= y && mouseY < y + SETTING_ROW) {
+                            handleSettingClick(mod, field, mouseX, panel.x);
+                            return true;
+                        }
+                        y += SETTING_ROW;
+                    }
+                }
             }
         }
-        return super.mouseClicked(mouseX, mouseY, button);
+
+        return super.mouseClicked(mx, my, button);
+    }
+
+    private void handleSettingClick(Module mod, Field field, int mouseX, int panelX) {
+        Setting s = field.getAnnotation(Setting.class);
+        try {
+            field.setAccessible(true);
+            Object value = field.get(mod);
+
+            if (value instanceof Boolean) {
+                field.setBoolean(mod, !(Boolean) value);
+            } else if (value instanceof Number) {
+                int sliderX = panelX + 3;
+                int sliderW = PANEL_WIDTH - 6;
+                double norm = (mouseX - sliderX) / (double) sliderW;
+                norm = Math.max(0, Math.min(1, norm));
+                double newVal = s.min() + norm * (s.max() - s.min());
+
+                if (value instanceof Integer) field.setInt(mod, (int) newVal);
+                else if (value instanceof Double) field.setDouble(mod, newVal);
+                else if (value instanceof Float) field.setFloat(mod, (float) newVal);
+                else if (value instanceof Long) field.setLong(mod, (long) newVal);
+            } else if (value instanceof String) {
+                String[] opts = s.values();
+                if (opts.length > 0) {
+                    int idx = Arrays.asList(opts).indexOf(value);
+                    idx = (idx + 1) % opts.length;
+                    field.set(mod, opts[idx]);
+                }
+            }
+            mod.saveConfig();
+        } catch (Exception ignored) {}
+    }
+
+    @Override
+    public boolean mouseReleased(double mx, double my, int button) {
+        if (draggingPanel != null) {
+            draggingPanel = null;
+            return true;
+        }
+        return super.mouseReleased(mx, my, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mx, double my, int button, double dx, double dy) {
+        if (draggingPanel != null) {
+            draggingPanel.x = (int) mx - dragDX;
+            draggingPanel.y = (int) my - dragDY;
+            return true;
+        }
+        return super.mouseDragged(mx, my, button, dx, dy);
     }
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        // Если ждём бинд — сохраняем клавишу
+        // Режим бинда
         if (bindingModule != null) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_DELETE) {
-                bindingModule.setKey(-1); // сброс бинда
+                bindingModule.setKey(-1);
             } else {
                 bindingModule.setKey(keyCode);
             }
             bindingModule = null;
             return true;
         }
+
+        // Ввод в поиске
+        if (searchFocused) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                searchFocused = false;
+                searchQuery = "";
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                if (!searchQuery.isEmpty()) {
+                    searchQuery = searchQuery.substring(0, searchQuery.length() - 1);
+                }
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_ENTER) {
+                searchFocused = false;
+                return true;
+            }
+            return true;
+        }
+
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             this.close();
             return true;
@@ -262,15 +465,16 @@ public class ClickGUI extends Screen {
     }
 
     @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (selectedModule != null && mouseX > 10 + categoryPanelWidth + modulePanelWidth) {
-            settingsScroll = Math.max(0, settingsScroll - (int) verticalAmount);
+    public boolean charTyped(char chr, int modifiers) {
+        if (searchFocused && chr >= 32 && chr != 127) {
+            searchQuery += chr;
             return true;
         }
-        scrollOffset = Math.max(0, scrollOffset - (int) verticalAmount);
-        return true;
+        return super.charTyped(chr, modifiers);
     }
 
     @Override
-    public boolean shouldPause() { return false; }
+    public boolean shouldPause() {
+        return false;
+    }
 }
